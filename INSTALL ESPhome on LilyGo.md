@@ -8,7 +8,7 @@ This guide explains how to install ESPHome on **Windows or Linux** and flash it 
 ## 🛠️ Requirements
 
 - Python 3.8 or higher (on Windows or Linux)
-- USB-C cable
+- USB-C cable (must support data transfer)
 - LilyGO T-CAN485 development board
 - ESPHome YAML configuration file (`Marstek-Lilygo-ESPHome-Config.yaml`)
 - Internet connection (for dependency installation)
@@ -27,29 +27,35 @@ The LilyGO T-CAN485 uses a **CH9102** or **CP2104** USB-to-Serial chip. Install 
 ### CP210x Driver (alternative)
 - **Download**: [Silicon Labs CP210x Driver](https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers)
 
-**After installation:**
-1. Restart your PC
-2. Connect the LilyGO board via USB-C
-3. Check Device Manager → Ports (COM & LPT)
-4. You should see a new COM port (e.g., COM3, COM5)
+**Installation Steps:**
+1. Download and run the driver installer
+2. Restart your PC
+3. Connect the LilyGO board via USB-C
+4. Check Device Manager → Ports (COM & LPT)
+5. You should see a new COM port (e.g., COM3, COM5)
 
 > 💡 **Linux users**: Drivers are usually included in the kernel. No installation needed.
 
 ---
 
-## 💻 Installation
+## 💻 ESPHome Installation
 
 ### ✅ Windows
 
-Open a terminal (CMD or PowerShell):
+Open PowerShell or CMD:
 
     # Step 1: Upgrade pip
     python -m pip install --upgrade pip
 
-    # Step 2: Install or update ESPHome
+    # Step 2: Install ESPHome
     pip3 install esphome --upgrade
 
-> ⚠️ **Note**: PlatformIO is **NOT required** separately. ESPHome includes it automatically.
+    # Step 3: Verify installation
+    esphome version
+
+**Expected output:** `Version: 2025.12.x`
+
+> ✅ **Note**: ESPHome automatically installs PlatformIO as a dependency. You do **NOT** need to install PlatformIO separately.
 
 ---
 
@@ -64,74 +70,110 @@ Open a terminal:
     # Step 2: Upgrade pip
     python3 -m pip install --upgrade pip
 
-    # Step 3: Install or update ESPHome
+    # Step 3: Install ESPHome
     pip3 install --user esphome --upgrade
 
-> 💡 **Note:** If `esphome` is not found after installation, add `~/.local/bin` to your `PATH`.
+    # Step 4: Verify installation
+    esphome version
+
+> 💡 **Note:** If `esphome` is not found after installation, add `~/.local/bin` to your `PATH`:
+>
+>     echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+>     source ~/.bashrc
 
 ---
 
-## ⚙️ ESPHome Commands
+## ⚙️ ESPHome Commands Reference
 
-Below are useful commands for managing and flashing your ESPHome project.
+Below are essential commands for managing your ESPHome project:
 
     # Show installed ESPHome version
     esphome version
 
-    # Clean previous build files
+    # Clean previous build files (recommended before first compile)
     esphome clean Marstek-Lilygo-ESPHome-Config.yaml
 
-    # Compile only (no flashing)
+    # Compile only (check for errors without flashing)
     esphome compile Marstek-Lilygo-ESPHome-Config.yaml
 
     # Compile and flash via USB
     esphome run Marstek-Lilygo-ESPHome-Config.yaml
 
-> 💡 **Note:** The first flash must be done via USB. Subsequent uploads can be done over-the-air (OTA).
+    # Open ESPHome Dashboard (web interface)
+    esphome dashboard
+
+> 💡 **Note:** The first flash **must** be done via USB. Subsequent updates can be done over-the-air (OTA).
 
 ---
 
-## 🔌 Flashing Tips
+## 🔌 First-Time USB Flashing
 
-### USB Flashing (First-Time)
+### Step 1: Connect the Board
 
-1. Connect the LilyGO T-CAN485 to your PC using a USB-C cable.
-2. If the board is not detected:
-   - Hold the **BOOT** button while plugging in the board.
-   - Release BOOT once connected.
-3. Run:
+1. Connect the LilyGO T-CAN485 to your PC using a USB-C cable
+2. **If Windows**: Wait for driver installation to complete
+3. **If the board is not detected**:
+   - Unplug the board
+   - Hold the **BOOT** button
+   - While holding BOOT, plug in the USB cable
+   - Release BOOT after 2 seconds
+   - The board should now appear as a COM port
 
-       esphome run Marstek-Lilygo-ESPHome-Config.yaml
+### Step 2: Flash the Firmware
 
-### Specify Port Manually (if needed)
+    esphome run Marstek-Lilygo-ESPHome-Config.yaml
 
-    # Example for Windows:
+**What happens:**
+1. ESPHome compiles the firmware
+2. Automatically detects the COM port (or prompts you to select)
+3. Uploads the firmware to the board
+4. Shows live serial logs
+
+### Step 3: Manual Port Selection (if needed)
+
+If auto-detection fails, specify the port manually:
+
+    # Windows example:
     esphome run Marstek-Lilygo-ESPHome-Config.yaml --device COM3
 
-    # Example for Linux:
+    # Linux example:
     esphome run Marstek-Lilygo-ESPHome-Config.yaml --device /dev/ttyUSB0
 
----
-
-## 📡 After Flashing
-
-Once the initial USB flash is successful:
-
-- The device will connect to Wi-Fi (as configured in your YAML)
-- It will be available for **OTA updates**
-- You can now manage it from the **ESPHome Dashboard**:
-
-      esphome dashboard
-
-  This opens a web interface at [**http://localhost:6052**](http://localhost:6052) where you can manage all your ESPHome devices.
+**Find your COM port:**
+- **Windows**: Device Manager → Ports (COM & LPT)
+- **Linux**: Run `ls /dev/ttyUSB*` or `ls /dev/ttyACM*`
 
 ---
 
-## 📚 Useful Resources
+## 📡 After First Flash
 
-- 🔗 [ESPHome Documentation](https://esphome.io)
-- 🔗 [LilyGO T-CAN485 GitHub Repository](https://github.com/Xinyuan-LilyGO/T-CAN485)
-- 🔗 [CH9102 Driver Download](https://www.wch.cn/downloads/CH343SER_EXE.html)
+Once the initial USB flash succeeds:
+
+✅ **The device will:**
+- Connect to Wi-Fi (configured in your `secrets.yaml`)
+- Become available for **OTA updates** (no USB needed)
+- Show up in Home Assistant (if ESPHome integration is installed)
+
+### ESPHome Dashboard
+
+Start the ESPHome Dashboard to manage your devices via web browser:
+
+    esphome dashboard
+
+- Opens at: [**http://localhost:6052**](http://localhost:6052)
+- Shows all your ESPHome devices
+- Upload updates via web interface
+- View logs in real-time
+
+### OTA Updates (Over-The-Air)
+
+After the first USB flash, update wirelessly:
+
+    esphome run Marstek-Lilygo-ESPHome-Config.yaml --device marstek.local
+
+Or use the IP address:
+
+    esphome run Marstek-Lilygo-ESPHome-Config.yaml --device 192.168.1.xxx
 
 ---
 
@@ -139,41 +181,81 @@ Once the initial USB flash is successful:
 
 ### Windows Issues
 
-**Device not detected?**
-- Install CH9102/CH341 driver (see USB Driver section above)
-- Check Device Manager for unknown devices
-- Try a different USB cable (must support data transfer)
+**❌ Device not detected / No COM port?**
+- Install CH9102 or CH341 driver (see section above)
+- Check Device Manager for "Unknown Device" with yellow warning
+- Try a different USB cable (must support data, not charge-only)
+- Try different USB ports (use USB 2.0 ports if USB 3.0 fails)
 - Hold BOOT button while connecting
 
-**COM port not appearing?**
-- Reinstall USB driver
-- Try different USB ports
-- Disable antivirus temporarily during driver installation
+**❌ "Access Denied" or "Permission Error"?**
+- Close any serial monitor tools (Arduino IDE, PuTTY, etc.)
+- Disable antivirus temporarily
+- Run PowerShell/CMD as Administrator
+
+**❌ COM port appears but flashing fails?**
+- Unplug the board
+- Hold BOOT button + plug in + release after 2 seconds
+- Try again with manual port: `--device COMx`
+
+---
 
 ### Linux Issues
 
-**Permission error on Linux**  
-Add your user to the `dialout` group and reconnect the device:
+**❌ Permission denied: /dev/ttyUSB0**
+
+Add your user to the `dialout` group:
 
     sudo usermod -aG dialout $USER
 
-Then **log out and log back in** for changes to take effect.
+**Important:** Log out and log back in (or reboot) for changes to take effect.
 
-**Device not found?**  
-Use `esphome run Marstek-Lilygo-ESPHome-Config.yaml --device /dev/ttyUSBx` to specify manually.
+**❌ Device not found?**
+
+Check which port the board is using:
+
+    ls /dev/ttyUSB*
+    ls /dev/ttyACM*
+
+Then specify manually:
+
+    esphome run Marstek-Lilygo-ESPHome-Config.yaml --device /dev/ttyUSB0
+
+---
 
 ### General Issues
 
-**Compilation fails?**
+**❌ Compilation fails?**
 - Run `esphome clean Marstek-Lilygo-ESPHome-Config.yaml` first
-- Check your internet connection (downloads dependencies)
-- Verify Python version: `python --version` (3.8+ required)
+- Check your internet connection (ESPHome downloads dependencies)
+- Verify Python version: `python --version` (requires 3.8 or higher)
+- Update ESPHome: `pip3 install esphome --upgrade`
 
-**OTA upload failing?**  
-- Reboot the device manually
-- Verify Wi-Fi config in secrets.yaml
-- Check device IP address
-- Reflash via USB if necessary
+**❌ "ModuleNotFoundError: No module named 'esphome'"?**
+- Reinstall ESPHome: `pip3 install esphome --upgrade`
+- Check if pip installed to correct Python: `python -m pip show esphome`
+
+**❌ OTA upload failing?**
+- Verify the device is powered on and connected to Wi-Fi
+- Check device IP address in your router
+- Ping the device: `ping marstek.local` or `ping 192.168.1.xxx`
+- Check `secrets.yaml` for correct WiFi credentials
+- Reflash via USB if OTA is completely broken
+
+**❌ ESPHome Dashboard not opening?**
+- Check if port 6052 is already in use
+- Try: `esphome dashboard --open-ui`
+- Access manually: Open browser and go to `http://localhost:6052`
+
+---
+
+## 📚 Useful Resources
+
+- 🔗 [ESPHome Official Documentation](https://esphome.io)
+- 🔗 [ESPHome Getting Started Guide](https://esphome.io/guides/getting_started_command_line/)
+- 🔗 [LilyGO T-CAN485 GitHub Repository](https://github.com/Xinyuan-LilyGO/T-CAN485)
+- 🔗 [CH9102 USB Driver Download](https://www.wch.cn/downloads/CH343SER_EXE.html)
+- 🔗 [Home Assistant ESPHome Integration](https://www.home-assistant.io/integrations/esphome/)
 
 ---
 
