@@ -4,17 +4,22 @@ esphome:
   on_boot:
     priority: -100
     then:
-      - delay: 30s
+      - component.update: mt_mid
+      - delay: 5s
+      - component.update: mt_slow
+      - delay: 5s
+      - component.update: mt_vslow
+      - delay: 20s
       - component.update: battery_remaining_capacity
-
-##THIS CONFIG IS ONLY FOR THE LILYGO T-CAN485, ITS NOT TESTET ON ANY OTHER DEVICE##
 
 esp32:
   board: esp32dev
+  watchdog_timeout: 10s
   framework:
     type: esp-idf
     advanced:
-      minimum_chip_revision: "3.1" 
+      flash_chip: winbond
+      minimum_chip_revision: "3.1"
       sram1_as_iram: true
       compiler_optimization: PERF
       disable_libc_locks_in_iram: true
@@ -23,13 +28,12 @@ esp32:
     sdkconfig_options:
       CONFIG_BOOTLOADER_LOG_LEVEL_WARN: "y"
       CONFIG_BT_ENABLED: "n"
-      CONFIG_ESP32_ALLOW_RTC_FAST_MEM_AS_HEAP: "y"
-      CONFIG_ESP32_WIFI_AMPDU_RX_ENABLED: "y"
-      CONFIG_ESP32_WIFI_AMPDU_TX_ENABLED: "y"
-      CONFIG_ESP32_WIFI_IRAM_OPT: "y"
-      CONFIG_ESP32_WIFI_RX_IRAM_OPT: "y"
-      CONFIG_ESP32_WIFI_STATIC_RX_BUFFER_NUM: "16"
-      CONFIG_ESP_TASK_WDT_TIMEOUT_S: "10"
+      CONFIG_ESP_SYSTEM_ALLOW_RTC_FAST_MEM_AS_HEAP: "y"
+      CONFIG_ESP_WIFI_AMPDU_RX_ENABLED: "y"
+      CONFIG_ESP_WIFI_AMPDU_TX_ENABLED: "y"
+      CONFIG_ESP_WIFI_IRAM_OPT: "y"
+      CONFIG_ESP_WIFI_RX_IRAM_OPT: "y"
+      CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM: "16"
       CONFIG_ESPTOOLPY_FLASHFREQ_80M: "y"
       CONFIG_ESPTOOLPY_FLASHMODE_QIO: "y"
       CONFIG_ESPTOOLPY_FLASHSIZE_4MB: "y"
@@ -39,10 +43,7 @@ esp32:
       CONFIG_LWIP_SO_REUSE: "y"
       CONFIG_LWIP_STATS: "n"
       CONFIG_LWIP_TCPIP_RECVMBOX_SIZE: "32"
-      CONFIG_LWIP_TCP_MSS: "1436"
-      CONFIG_LWIP_TCP_SND_BUF_DEFAULT: "5744"
-      CONFIG_LWIP_TCP_WND_DEFAULT: "5744"
-      CONFIG_NEWLIB_NANO_FORMAT: "y"
+      CONFIG_LIBC_NEWLIB_NANO_FORMAT: "y"
       CONFIG_UART_ISR_IN_IRAM: "y"
 
 logger:
@@ -58,7 +59,7 @@ api:
 
 ota:
   - platform: esphome
-    password: !secret ota_password
+    encryption:
 
 wifi:
   ssid: !secret wifi_ssid
@@ -80,8 +81,6 @@ wifi:
   #  ssid: "Fallback Hotspot"
   #  password: "wifi_fallback"
 
-captive_portal:
-
 web_server:
   port: 80
   version: 3
@@ -95,20 +94,21 @@ web_server:
       name: "Control"
       sorting_weight: -30
     - id: Warnings
-      name: "Warnings"
+      name: "Warnungen"
       sorting_weight: -20
     - id: Diagnostic
       name: "Diagnostic"
       sorting_weight: -10
 
+##Time Server Optional, comment if you dont have a Timeserver like Chrony,setup your TimeServer IP!!!##
 time:
   - platform: sntp
     id: local_time
     timezone: "Europe/Berlin"
     servers:
-      - 0.pool.ntp.org   
+      - 0.pool.ntp.org
       - 1.pool.ntp.org
-      - 2.pool.ntp.org   
+      - 2.pool.ntp.org
       - 3.pool.ntp.org
     on_time_sync:
       then:
@@ -148,15 +148,33 @@ modbus:
   - uart_id: mod_bus
     id: modbus1
     send_wait_time: 30ms
+    turnaround_time: 100ms
 
+# skip_updates entfällt ab ESPHome 2026.9 -> ein Controller je Abfrageintervall (alle: gleiche Slave-Adresse)
 modbus_controller:
-  - id: mt
+  - id: mt # 3 s: Leistung, Spannung, Status, Fehlerbits
     address: 0x1
     modbus_id: modbus1
     setup_priority: -100
-    command_throttle: 30ms
     update_interval: 3s
     offline_skip_updates: 5
+  - id: mt_mid # 15 s: SOC, Konfig-Werte (number/select)
+    address: 0x1
+    modbus_id: modbus1
+    setup_priority: -100
+    update_interval: 15s
+    offline_skip_updates: 2
+  - id: mt_slow # 60 s: Gesamtenergie, Netzwerkstatus, Zellspannungen
+    address: 0x1
+    modbus_id: modbus1
+    setup_priority: -100
+    update_interval: 60s
+    offline_skip_updates: 1
+  - id: mt_vslow # 300 s: Tages-/Monats-/Gesamtzähler, Versionen, Temperaturen
+    address: 0x1
+    modbus_id: modbus1
+    setup_priority: -100
+    update_interval: 300s
 
 text_sensor:
   - platform: template
@@ -198,7 +216,7 @@ text_sensor:
       if (std::isnan(id(inverter_state).state)) {
         return std::string("Unbekannt");
       }
-      
+
       switch (int(id(inverter_state).state)) {
         case 0: return std::string("Sleep");
         case 1: return std::string("Standby");
@@ -221,27 +239,25 @@ text_sensor:
     lambda: |-
       const float soc = id(battery_soc).state;
       const float power = id(battery_power).state;
-      const float cutoff_discharge_soc = id(discharging_cutoff_capacity).state;
-      const float cutoff_charge_soc = id(charging_cutoff_capacity).state;
+      const float cutoff_dis = id(discharging_cutoff_capacity).state;
+      const float cutoff_chg = id(charging_cutoff_capacity).state;
+      const float total_kwh = id(battery_total_energy).state;
 
-      if (std::isnan(soc) || std::isnan(power) ||
-          std::isnan(cutoff_discharge_soc) || std::isnan(cutoff_charge_soc)) {
+      if (std::isnan(soc) || std::isnan(power) || std::isnan(cutoff_dis) ||
+          std::isnan(cutoff_chg) || std::isnan(total_kwh)) {
         return {"Unbekannt"};
       }
 
-      static constexpr float CAP_TOTAL_WH = 5120.0f;
-      const float cap_now_wh = (soc / 100.0f) * CAP_TOTAL_WH;
-      const float cap_min_wh = (cutoff_discharge_soc / 100.0f) * CAP_TOTAL_WH;
-      const float cap_target_wh = (cutoff_charge_soc / 100.0f) * CAP_TOTAL_WH;
+      const float cap_wh = total_kwh * 1000.0f;
+      const float p_chg = power;     // Laden positiv (DC-Seite, Register 32102)
+      const float p_dis = -power;    // Entladen negativ -> hier als positive Entladeleistung
 
-      if (power > 20.0f) {
-        if (soc >= cutoff_charge_soc) {
+      if (p_chg > 20.0f) {
+        if (soc >= cutoff_chg) {
           return {"Voll"};
         }
-
-        float hours = (cap_target_wh - cap_now_wh) / power;
+        float hours = ((cutoff_chg - soc) / 100.0f) * cap_wh / p_chg;
         if (hours < 0.0f) hours = 0.0f;
-
         int h = (int)hours;
         int m = (int)((hours - h) * 60.0f);
         char buf[32];
@@ -249,14 +265,14 @@ text_sensor:
         return std::string(buf);
       }
 
-      if (soc <= cutoff_discharge_soc) {
+      // Gerät stoppt beim Wechsel auf (Cutoff - 1)
+      if (soc <= cutoff_dis - 1.0f) {
         return {"Leer"};
       }
 
-      if (power < -20.0f) {
-        float hours = (cap_now_wh - cap_min_wh) / std::abs(power);
-        if (hours < 0.0f) hours = 0.0f;
-
+      if (p_dis > 20.0f) {
+        // Erwartungswert der Restenergie bis zum Stopp: SOC - Cutoff + 0,5 %
+        float hours = ((soc - cutoff_dis + 0.5f) / 100.0f) * cap_wh / p_dis;
         int h = (int)hours;
         int m = (int)((hours - h) * 60.0f);
         char buf[32];
@@ -296,13 +312,12 @@ text_sensor:
   - platform: modbus_controller
     id: wifi_status
     name: "Battery Wifi Status"
-    modbus_controller_id: mt
+    modbus_controller_id: mt_slow
     register_type: holding
     address: 30300
     raw_encode: NONE
     icon: mdi:wifi-alert
     entity_category: diagnostic
-    skip_updates: 20
     lambda: |-
       uint16_t val = (data[item->offset] << 8) + data[item->offset+1];
       switch (val) {
@@ -317,13 +332,12 @@ text_sensor:
   - platform: modbus_controller
     id: bt_status
     name: "BT Status"
-    modbus_controller_id: mt
+    modbus_controller_id: mt_slow
     register_type: holding
     address: 30301
     raw_encode: NONE
     icon: mdi:bluetooth
     entity_category: diagnostic
-    skip_updates: 20
     lambda: |-
       uint16_t val = (data[item->offset] << 8) + data[item->offset+1];
       switch (val) {
@@ -341,13 +355,12 @@ text_sensor:
   - platform: modbus_controller
     id: cloud_status
     name: "Cloud Status"
-    modbus_controller_id: mt
+    modbus_controller_id: mt_slow
     register_type: holding
     address: 30302
     raw_encode: NONE
     icon: mdi:cloud-outline
     entity_category: diagnostic
-    skip_updates: 20
     lambda: |-
       uint16_t val = (data[item->offset] << 8) + data[item->offset+1];
       switch (val) {
@@ -362,13 +375,12 @@ text_sensor:
   - platform: modbus_controller
     id: power_restriction_discharge
     name: "Power restriction"
-    modbus_controller_id: mt
+    modbus_controller_id: mt_slow
     register_type: holding
     address: 41010
     raw_encode: NONE
     icon: mdi:power-plug-off-outline
     entity_category: diagnostic
-    skip_updates: 20
     lambda: |-
       uint16_t val = (data[item->offset] << 8) + data[item->offset+1];
       switch (val) {
@@ -700,7 +712,7 @@ sensor:
     id: "wifi_signal_strength"
     icon: mdi:wifi
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_vslow
     register_type: holding
     address: 30303
     value_type: U_WORD
@@ -709,7 +721,6 @@ sensor:
     filters:
       - multiply: -1
       - delta: 3.0
-    skip_updates: 99
     web_server:
       sorting_group_id: Diagnostic
       sorting_weight: 7
@@ -717,12 +728,11 @@ sensor:
   - platform: modbus_controller
     id: software_version
     icon: mdi:factory
-    modbus_controller_id: mt
+    modbus_controller_id: mt_vslow
     register_type: holding
     address: 31100
     value_type: U_WORD
     accuracy_decimals: 0
-    skip_updates: 149
     internal: true
     on_value:
       then:
@@ -734,12 +744,11 @@ sensor:
   - platform: modbus_controller
     id: firmware_version
     icon: mdi:factory
-    modbus_controller_id: mt
+    modbus_controller_id: mt_vslow
     register_type: holding
     address: 31101
     value_type: U_WORD
     accuracy_decimals: 0
-    skip_updates: 149
     internal: true
     on_value:
       then:
@@ -751,12 +760,11 @@ sensor:
   - platform: modbus_controller
     id: bms_version
     icon: mdi:factory
-    modbus_controller_id: mt
+    modbus_controller_id: mt_vslow
     register_type: holding
     address: 31102
     value_type: U_WORD
     accuracy_decimals: 0
-    skip_updates: 149
     internal: true
     on_value:
       then:
@@ -834,13 +842,12 @@ sensor:
     platform: modbus_controller
     device_class: battery
     state_class: measurement
-    modbus_controller_id: mt
+    modbus_controller_id: mt_mid
     register_type: holding
     address: 32104
     value_type: U_WORD
     unit_of_measurement: "%"
     accuracy_decimals: 0
-    skip_updates: 3
     web_server:
       sorting_group_id: Info
       sorting_weight: 5
@@ -851,7 +858,7 @@ sensor:
     platform: modbus_controller
     device_class: energy_storage
     state_class: measurement
-    modbus_controller_id: mt
+    modbus_controller_id: mt_slow
     register_type: holding
     address: 32105
     value_type: U_WORD
@@ -859,7 +866,6 @@ sensor:
     accuracy_decimals: 2
     filters:
       - multiply: 0.001
-    skip_updates: 19
     on_value:
       then:
         - component.update: battery_remaining_capacity
@@ -943,11 +949,11 @@ sensor:
       sorting_group_id: Info
       sorting_weight: 1
 
-  - name: "Total Charging Energy"
+  - name: "Gesamte Ladung"
     id: "total_charging_energy"
     icon: mdi:chart-bar
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_vslow
     register_type: holding
     address: 33000
     value_type: U_DWORD
@@ -957,16 +963,15 @@ sensor:
     accuracy_decimals: 2
     filters:
       - multiply: 0.01
-    skip_updates: 59
     web_server:
       sorting_group_id: Info
       sorting_weight: 16
 
-  - name: "Total Discharging Energy"
+  - name: "Gesamte Entladung"
     id: "total_discharging_energy"
     icon: mdi:chart-bar
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_vslow
     register_type: holding
     address: 33002
     value_type: U_DWORD
@@ -976,16 +981,15 @@ sensor:
     accuracy_decimals: 2
     filters:
       - multiply: 0.01
-    skip_updates: 59
     web_server:
       sorting_group_id: Info
       sorting_weight: 17
 
-  - name: "Daily Charging Energy"
+  - name: "Gesamte Tagesladung"
     id: "daily_charging_energy"
     icon: mdi:chart-bar
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_vslow
     register_type: holding
     address: 33004
     value_type: U_DWORD
@@ -995,16 +999,15 @@ sensor:
     accuracy_decimals: 2
     filters:
       - multiply: 0.01
-    skip_updates: 59
     web_server:
       sorting_group_id: Info
       sorting_weight: 12
 
-  - name: "Daily Discharging Energy"
+  - name: "Gesamte Tagesentladung"
     id: "daily_discharging_energy"
     icon: mdi:chart-bar
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_vslow
     register_type: holding
     address: 33006
     value_type: U_DWORD
@@ -1014,16 +1017,15 @@ sensor:
     accuracy_decimals: 2
     filters:
       - multiply: 0.01
-    skip_updates: 59
     web_server:
       sorting_group_id: Info
       sorting_weight: 13
 
-  - name: "Monthly Charging Energy"
+  - name: "Gesamte Monatsladung"
     id: "monthly_charging_energy"
     icon: mdi:chart-bar
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_vslow
     register_type: holding
     address: 33008
     value_type: U_DWORD
@@ -1033,16 +1035,15 @@ sensor:
     accuracy_decimals: 2
     filters:
       - multiply: 0.01
-    skip_updates: 59
     web_server:
       sorting_group_id: Info
       sorting_weight: 14
 
-  - name: "Monthly Discharging Energy"
+  - name: "Gesamte Monatsentladung"
     id: "monthly_discharging_energy"
     icon: mdi:chart-bar
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_vslow
     register_type: holding
     address: 33010
     value_type: U_DWORD
@@ -1052,7 +1053,6 @@ sensor:
     accuracy_decimals: 2
     filters:
       - multiply: 0.01
-    skip_updates: 59
     web_server:
       sorting_group_id: Info
       sorting_weight: 15
@@ -1061,7 +1061,7 @@ sensor:
     id: "internal_temperature"
     icon: mdi:thermometer
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_vslow
     register_type: holding
     address: 35000
     value_type: S_WORD
@@ -1073,7 +1073,6 @@ sensor:
     filters:
       - multiply: 0.1
       - delta: 0.5
-    skip_updates: 149
     web_server:
       sorting_group_id: Info
       sorting_weight: 18
@@ -1082,7 +1081,7 @@ sensor:
     id: "internal_mos1_temperature"
     icon: mdi:thermometer
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_vslow
     register_type: holding
     address: 35001
     value_type: S_WORD
@@ -1094,7 +1093,6 @@ sensor:
     filters:
       - multiply: 0.1
       - delta: 1.0
-    skip_updates: 149
     web_server:
       sorting_group_id: Info
       sorting_weight: 19
@@ -1103,7 +1101,7 @@ sensor:
     id: "internal_mos2_temperature"
     icon: mdi:thermometer
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_vslow
     register_type: holding
     address: 35002
     value_type: S_WORD
@@ -1115,7 +1113,6 @@ sensor:
     filters:
       - multiply: 0.1
       - delta: 1.0
-    skip_updates: 149
     web_server:
       sorting_group_id: Info
       sorting_weight: 20
@@ -1124,7 +1121,7 @@ sensor:
     id: "max_cell_temperature"
     icon: mdi:thermometer
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_vslow
     register_type: holding
     address: 35010
     value_type: S_WORD
@@ -1133,9 +1130,8 @@ sensor:
     state_class: measurement
     entity_category: diagnostic
     accuracy_decimals: 1
-    skip_updates: 149
     filters:
-     - delta: 0.5
+      - delta: 0.5
     web_server:
       sorting_group_id: Info
       sorting_weight: 21
@@ -1144,7 +1140,7 @@ sensor:
     id: "min_cell_temperature"
     icon: mdi:thermometer
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_vslow
     register_type: holding
     address: 35011
     value_type: S_WORD
@@ -1153,18 +1149,17 @@ sensor:
     state_class: measurement
     entity_category: diagnostic
     accuracy_decimals: 1
-    skip_updates: 149
     filters:
-     - delta: 0.5    
+      - delta: 0.5
     web_server:
       sorting_group_id: Info
       sorting_weight: 22
 
-  - name: "Max. Cell Voltage"
+  - name: "Max. Zellenspannung"
     icon: mdi:sine-wave
     id: max_cell_voltage
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_slow
     register_type: holding
     address: 37007
     value_type: U_WORD
@@ -1175,16 +1170,15 @@ sensor:
     accuracy_decimals: 2
     filters:
       - multiply: 0.001
-    skip_updates: 29
     web_server:
       sorting_group_id: Info
       sorting_weight: 23
 
-  - name: "Min. Cell Voltage"
+  - name: "Min. Zellenspannung"
     icon: mdi:sine-wave
     id: min_cell_voltage
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_slow
     register_type: holding
     address: 37008
     value_type: U_WORD
@@ -1195,23 +1189,22 @@ sensor:
     accuracy_decimals: 2
     filters:
       - multiply: 0.001
-    skip_updates: 29
     on_value:
-      - component.update: cellvoltagediff
+      - component.update: zellspannungsdifferenz
     web_server:
       sorting_group_id: Info
       sorting_weight: 24
 
   - platform: template
-    name: "Cell Voltage Delta"
-    id: cellvoltagediff
+    name: "Zellspannungsdifferenz"
+    id: zellspannungsdifferenz
     icon: mdi:sine-wave
     unit_of_measurement: "V"
     device_class: voltage
     accuracy_decimals: 3
     state_class: measurement
     entity_category: diagnostic
-    update_interval: never 
+    update_interval: never
     lambda: |-
       if (std::isnan(id(max_cell_voltage).state) || std::isnan(id(min_cell_voltage).state)) {
         return NAN;
@@ -1237,13 +1230,12 @@ select:
     id: "rs485_control_mode"
     icon: mdi:connection
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_mid
     address: 42000
     value_type: U_WORD
     optionsmap:
       "enable": 21930
       "disable": 21947
-    skip_updates: 4
     web_server:
       sorting_group_id: Control
       sorting_weight: 1
@@ -1252,14 +1244,13 @@ select:
     id: "forcible_chargedischarge"
     icon: mdi:battery-sync
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_mid
     address: 42010
     value_type: U_WORD
     optionsmap:
       "stop": 0
       "charge": 1
       "discharge": 2
-    skip_updates: 4
     web_server:
       sorting_group_id: Control
       sorting_weight: 4
@@ -1268,13 +1259,12 @@ select:
     id: "backup_function"
     icon: mdi:backup-restore
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_mid
     address: 41200
     value_type: U_WORD
     optionsmap:
       "enable": 0
       "disable": 1
-    skip_updates: 4
     web_server:
       sorting_group_id: Control
       sorting_weight: 3
@@ -1283,14 +1273,13 @@ select:
     id: "user_work_mode"
     icon: mdi:auto-mode
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_mid
     address: 43000
     value_type: U_WORD
     optionsmap:
       "manual": 0
       "anti-feed": 1
       "ai": 2
-    skip_updates: 4
     web_server:
       sorting_group_id: Control
       sorting_weight: 2
@@ -1301,7 +1290,7 @@ number:
     icon: mdi:battery-charging-medium
     mode: box
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_mid
     register_type: holding
     address: 42011
     value_type: U_WORD
@@ -1309,7 +1298,6 @@ number:
     min_value: 12
     max_value: 100
     step: 1
-    skip_updates: 4
     web_server:
       sorting_group_id: Control
       sorting_weight: 9
@@ -1319,7 +1307,7 @@ number:
     icon: mdi:tune-variant
     mode: box
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_mid
     register_type: holding
     address: 42020
     value_type: U_WORD
@@ -1327,7 +1315,6 @@ number:
     min_value: 0
     max_value: 2500
     step: 1
-    skip_updates: 4
     web_server:
       sorting_group_id: Control
       sorting_weight: 5
@@ -1337,7 +1324,7 @@ number:
     icon: mdi:tune-variant
     mode: box
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_mid
     register_type: holding
     address: 42021
     value_type: U_WORD
@@ -1345,7 +1332,6 @@ number:
     min_value: 0
     max_value: 2500
     step: 1
-    skip_updates: 4
     web_server:
       sorting_group_id: Control
       sorting_weight: 6
@@ -1353,9 +1339,9 @@ number:
   - name: "Charging Cutoff Capacity"
     id: "charging_cutoff_capacity"
     icon: mdi:battery-90
-    mode: box 
+    mode: box
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_mid
     register_type: holding
     address: 44000
     value_type: U_WORD
@@ -1363,7 +1349,6 @@ number:
     min_value: 80
     max_value: 100
     multiply: 10
-    skip_updates: 2
     on_value:
       - component.update: battery_runtime_estimate
     web_server:
@@ -1373,9 +1358,9 @@ number:
   - name: "Discharging Cutoff Capacity"
     id: "discharging_cutoff_capacity"
     icon: mdi:battery-10
-    mode: box 
+    mode: box
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_mid
     register_type: holding
     address: 44001
     value_type: U_WORD
@@ -1383,7 +1368,6 @@ number:
     min_value: 12
     max_value: 30
     multiply: 10
-    skip_updates: 2
     on_value:
       - component.update: battery_runtime_estimate
     web_server:
@@ -1395,7 +1379,7 @@ number:
     icon: mdi:tune-variant
     mode: box
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_mid
     register_type: holding
     address: 44002
     value_type: U_WORD
@@ -1403,7 +1387,6 @@ number:
     min_value: 0
     max_value: 2500
     step: 1
-    skip_updates: 2
     web_server:
       sorting_group_id: Control
       sorting_weight: 10
@@ -1414,7 +1397,7 @@ number:
     icon: mdi:tune-variant
     mode: box
     platform: modbus_controller
-    modbus_controller_id: mt
+    modbus_controller_id: mt_mid
     register_type: holding
     address: 44003
     value_type: U_WORD
@@ -1422,7 +1405,6 @@ number:
     min_value: 0
     max_value: 2500
     step: 1
-    skip_updates: 2
     web_server:
       sorting_group_id: Control
       sorting_weight: 11
@@ -1435,7 +1417,7 @@ light:
     chipset: WS2812
     pin: GPIO4
     num_leds: 1
-    rgb_order: GRB
+    channel_colors: GRB
     web_server:
       sorting_group_id: Diagnostic
       sorting_weight: 24
@@ -1465,10 +1447,10 @@ interval:
       - lambda: |-
           static int last_status = 0;
           static int status1_ticks = 0;
-          
+
           bool batt_ok = !std::isnan(id(battery_soc).state);
           bool wifi_ok = id(wifi_signal_strength).state > -80.0f;
-          
+
           int new_status = 0;
           if (batt_ok && wifi_ok) {
             new_status = 1;
@@ -1479,10 +1461,10 @@ interval:
           } else {
             new_status = 4;
           }
-          
+
           bool changed = (new_status != last_status);
           last_status = new_status;
-          
+
           if (new_status == 1) {
             if (changed) {
               status1_ticks = 0;
