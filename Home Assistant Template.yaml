@@ -1,26 +1,33 @@
-You need this Tempaltes for the Marstek Dashboard:
-  - name: "Monats-Effizienz"
-    unique_id: monats_effizienz
-    unit_of_measurement: "%"
-    icon: mdi:calendar-month
-    state: >
-      {% set charging = states('sensor.marstekbattery_gesamte_monatsladung') | float(0) %}
-      {% set discharging = states('sensor.marstekbattery_gesamte_monatsentladung') | float(0) %}
-      {% if charging > 0 %}
-        {{ ((discharging / charging) * 100) | round(1) }}
-      {% else %}
-        0
-      {% endif %}
+- name: "Monthly Efficiency"
+  unique_id: monats_effizienz
+  unit_of_measurement: "%"
+  state_class: measurement
+  icon: mdi:calendar-month
+  state: >
+    {% set charging = states('sensor.marstekbattery_gesamte_monatsladung') | float(0) %}
+    {% set discharging = states('sensor.marstekbattery_gesamte_monatsentladung') | float(0) %}
+    {% if charging > 0 %}
+      {{ ((discharging / charging) * 100) | round(1) }}
+    {% else %}
+      0
+    {% endif %}
+  availability: >
+    {{ states('sensor.marstekbattery_gesamte_monatsladung') | is_number and
+       states('sensor.marstekbattery_gesamte_monatsentladung') | is_number }}
 
-  - name: "Totale-Effizienz"
-    unique_id: totale_effizienz
-    unit_of_measurement: "%"
-    icon: mdi:battery-high
-    state: >
-      {% set charging = states('sensor.batterie_ladung') | float(0) %}
-      {% set discharging = states('sensor.batterie_entladung') | float(0) %}
-      {% if charging > 0 %}
-        {{ ((discharging / charging) * 100) | round(1) }}
-      {% else %}
-        0
-      {% endif %}
+- name: "Total Efficiency"
+  unique_id: totale_effizienz
+  unit_of_measurement: "%"
+  state_class: measurement
+  icon: mdi:battery-high
+  state: >
+    {% set charging = states('sensor.batterie_ladung') | float(0) %}
+    {% set discharging = states('sensor.batterie_entladung') | float(0) %}
+    {% if charging > 0 %}
+      {{ ((discharging / charging) * 100) | round(1) }}
+    {% else %}
+      0
+    {% endif %}
+  availability: >
+    {{ states('sensor.batterie_ladung') | is_number and
+       states('sensor.batterie_entladung') | is_number }}
