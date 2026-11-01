@@ -94,7 +94,7 @@ web_server:
       name: "Control"
       sorting_weight: -30
     - id: Warnings
-      name: "Warnungen"
+      name: "Warnings"
       sorting_weight: -20
     - id: Diagnostic
       name: "Diagnostic"
@@ -164,7 +164,7 @@ modbus_controller:
     setup_priority: -100
     update_interval: 15s
     offline_skip_updates: 2
-  - id: mt_slow # 60 s: Gesamtenergie, Netzwerkstatus, Zellspannungen
+  - id: mt_slow # 60 s: total energy, network status, cell voltages
     address: 0x1
     modbus_id: modbus1
     setup_priority: -100
@@ -214,7 +214,7 @@ text_sensor:
     update_interval: never
     lambda: |-
       if (std::isnan(id(inverter_state).state)) {
-        return std::string("Unbekannt");
+        return std::string("Unknown");
       }
 
       switch (int(id(inverter_state).state)) {
@@ -245,38 +245,38 @@ text_sensor:
 
       if (std::isnan(soc) || std::isnan(power) || std::isnan(cutoff_dis) ||
           std::isnan(cutoff_chg) || std::isnan(total_kwh)) {
-        return {"Unbekannt"};
+        return {"Unknown"};
       }
 
       const float cap_wh = total_kwh * 1000.0f;
-      const float p_chg = power;     // Laden positiv (DC-Seite, Register 32102)
-      const float p_dis = -power;    // Entladen negativ -> hier als positive Entladeleistung
+      const float p_chg = power;     // Charging is positive (DC side, register 32102)
+      const float p_dis = -power;    // Discharging is negative, so make it positive here
 
       if (p_chg > 20.0f) {
         if (soc >= cutoff_chg) {
-          return {"Voll"};
+          return {"Full"};
         }
         float hours = ((cutoff_chg - soc) / 100.0f) * cap_wh / p_chg;
         if (hours < 0.0f) hours = 0.0f;
         int h = (int)hours;
         int m = (int)((hours - h) * 60.0f);
         char buf[32];
-        snprintf(buf, sizeof(buf), "Voll in: %dh %dmin", h, m);
+        snprintf(buf, sizeof(buf), "Full in: %dh %dmin", h, m);
         return std::string(buf);
       }
 
-      // Gerät stoppt beim Wechsel auf (Cutoff - 1)
+      // The device stops when SOC reaches (cutoff - 1)
       if (soc <= cutoff_dis - 1.0f) {
-        return {"Leer"};
+        return {"Empty"};
       }
 
       if (p_dis > 20.0f) {
-        // Erwartungswert der Restenergie bis zum Stopp: SOC - Cutoff + 0,5 %
+        // Estimated remaining energy until shutdown: SOC - cutoff + 0.5%
         float hours = ((soc - cutoff_dis + 0.5f) / 100.0f) * cap_wh / p_dis;
         int h = (int)hours;
         int m = (int)((hours - h) * 60.0f);
         char buf[32];
-        snprintf(buf, sizeof(buf), "Leer in: %dh %dmin", h, m);
+        snprintf(buf, sizeof(buf), "Empty in: %dh %dmin", h, m);
         return std::string(buf);
       }
 
@@ -949,7 +949,7 @@ sensor:
       sorting_group_id: Info
       sorting_weight: 1
 
-  - name: "Gesamte Ladung"
+  - name: "Total Charging Energy"
     id: "total_charging_energy"
     icon: mdi:chart-bar
     platform: modbus_controller
@@ -967,7 +967,7 @@ sensor:
       sorting_group_id: Info
       sorting_weight: 16
 
-  - name: "Gesamte Entladung"
+  - name: "Total Discharging Energy"
     id: "total_discharging_energy"
     icon: mdi:chart-bar
     platform: modbus_controller
@@ -985,7 +985,7 @@ sensor:
       sorting_group_id: Info
       sorting_weight: 17
 
-  - name: "Gesamte Tagesladung"
+  - name: "Daily Charging Energy"
     id: "daily_charging_energy"
     icon: mdi:chart-bar
     platform: modbus_controller
@@ -1003,7 +1003,7 @@ sensor:
       sorting_group_id: Info
       sorting_weight: 12
 
-  - name: "Gesamte Tagesentladung"
+  - name: "Daily Discharging Energy"
     id: "daily_discharging_energy"
     icon: mdi:chart-bar
     platform: modbus_controller
@@ -1021,7 +1021,7 @@ sensor:
       sorting_group_id: Info
       sorting_weight: 13
 
-  - name: "Gesamte Monatsladung"
+  - name: "Monthly Charging Energy"
     id: "monthly_charging_energy"
     icon: mdi:chart-bar
     platform: modbus_controller
@@ -1039,7 +1039,7 @@ sensor:
       sorting_group_id: Info
       sorting_weight: 14
 
-  - name: "Gesamte Monatsentladung"
+  - name: "Monthly Discharging Energy"
     id: "monthly_discharging_energy"
     icon: mdi:chart-bar
     platform: modbus_controller
@@ -1155,7 +1155,7 @@ sensor:
       sorting_group_id: Info
       sorting_weight: 22
 
-  - name: "Max. Zellenspannung"
+  - name: "Max. Cell Voltage"
     icon: mdi:sine-wave
     id: max_cell_voltage
     platform: modbus_controller
@@ -1174,7 +1174,7 @@ sensor:
       sorting_group_id: Info
       sorting_weight: 23
 
-  - name: "Min. Zellenspannung"
+  - name: "Min. Cell Voltage"
     icon: mdi:sine-wave
     id: min_cell_voltage
     platform: modbus_controller
@@ -1190,14 +1190,14 @@ sensor:
     filters:
       - multiply: 0.001
     on_value:
-      - component.update: zellspannungsdifferenz
+      - component.update: cell_voltage_delta
     web_server:
       sorting_group_id: Info
       sorting_weight: 24
 
   - platform: template
-    name: "Zellspannungsdifferenz"
-    id: zellspannungsdifferenz
+    name: "Cell Voltage Delta"
+    id: cell_voltage_delta
     icon: mdi:sine-wave
     unit_of_measurement: "V"
     device_class: voltage
