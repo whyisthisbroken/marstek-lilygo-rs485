@@ -67,11 +67,32 @@ The repository includes [Home Assistant Template.yaml](Home%20Assistant%20Templa
 
 ## Polling and Performance
 
-The Modbus controllers in this configuration use 3-, 15-, 60- and 300-second intervals, grouping registers by update frequency. The fast controller covers measurements such as battery power. Derived remaining-capacity and runtime values are recalculated when their source values change. The UART receive buffer is explicitly set to 512 bytes, and the ESP-IDF configuration enables selected Wi-Fi and compiler optimizations.
+### Polling intervals
 
-Compared with [`lilygo-rs485.yaml` on the upstream project's main branch](https://github.com/Superduper1969/MarstekVenus-LilygoRS485/blob/main/lilygo-rs485.yaml), the upstream configuration uses one 5-second Modbus controller and sets `skip_updates: 2` for battery power. That gives a nominal 15-second polling interval for that sensor, compared with 3 seconds here. This is a configuration-level interval comparison, not a measured end-to-end latency benchmark.
+The clearest response-time gains come from refreshing battery power and remaining capacity more often:
 
-The upstream remaining-capacity template uses a 300-second update interval. This configuration instead updates the derived value from state-of-charge and total-energy readings. RAM use, firmware size, Wi-Fi throughput and total network or bus traffic have not been compared under controlled, identical build and runtime conditions, so no numerical claims are made for them here.
+| Metric                     | Upstream configuration                                                  | This configuration                                                                         | Difference vs. upstream                                    |
+| -------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| Battery power polling      | 5-second controller with `skip_updates: 2` (nominally every 15 seconds) | 3-second controller                                                                        | 5x more frequent polling; 80% shorter interval             |
+| Remaining capacity refresh | Fixed 300-second interval                                               | Recalculated on state-of-charge updates (15 seconds) and total-energy updates (60 seconds) | Up to 20x more frequent source updates                     |
+| Modbus scheduling          | One 5-second controller with per-sensor skipped updates                 | Four controller groups: 3, 15, 60 and 300 seconds                                          | Fast measurements and slow counters use separate schedules |
+
+These are configured update intervals, not measured API or display latency.
+
+### ESP-IDF build tuning
+
+These build-time settings are separate from the Modbus polling intervals:
+
+- **Compiler:** `compiler_optimization: PERF` selects `-O2` rather than ESPHome's default size optimization. It can improve execution speed, at the cost of a larger binary.
+- **Flash:** 80 MHz QIO increases flash access bandwidth. The flash chip and board wiring must support both settings. The Winbond-specific driver reduces unused flash-driver code and IRAM use; it assumes the chip is Winbond.
+- **IRAM:** `sram1_as_iram` makes up to 40 KB more IRAM available. The lwIP base and TCP-specific options place networking hot paths in IRAM; ESP-IDF 5.5.6 estimates about 10 KB and 17 KB respectively. Wi-Fi and UART IRAM options also trade IRAM for throughput or interrupt handling.
+- **Wi-Fi buffering:** The T-CAN485 has no PSRAM. With AMPDU RX enabled, ESP-IDF 5.5.6 therefore defaults to 10 static RX buffers and an RX BA window of 6. This configuration raises the buffer count to 16, using about 9.6 KB more static RAM than that default. The 16 buffers are enough for the current BA window; no custom window size is set.
+- **Resource reductions:** Bluetooth and IPv6 are disabled, and Newlib Nano formatting and reduced log levels reduce unused features or code. Nano formatting does not support all `printf` features; disabling Bluetooth or IPv6 removes those capabilities.
+- **Hardware requirements:** The configuration requires ESP32 revision 3.1 or newer, 4 MB flash, a Winbond flash chip and QIO at 80 MHz. These are compatibility constraints, not universal optimizations; unsupported hardware may fail to boot.
+
+Several explicit values repeat ESP-IDF 5.5.6 defaults: AMPDU RX/TX, Wi-Fi IRAM and RX IRAM optimization, `CONFIG_LWIP_SO_REUSE=y`, `CONFIG_LWIP_STATS=n`, and `CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=32`. `enable_lwip_tcpip_core_locking: true` and `disable_libc_locks_in_iram: true` also match ESPHome's defaults. These values are explicit in the YAML but are not additional gains over the defaults. The effects described here are configuration intent, not measured percentage improvements; numeric performance claims require controlled runtime tests.
+
+No CPU frequency is set explicitly. ESPHome defaults the original ESP32 to its maximum supported frequency of 240 MHz.
 
 ## Sensors and Controls
 
