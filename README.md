@@ -1,5 +1,7 @@
 # Marstek Venus E ESPHome Configuration
 
+<img width="1280" height="640" alt="repo-social-preview" src="https://github.com/user-attachments/assets/5fe73238-faf5-418a-a4f7-bd77f6a0a57c" />
+
 [![ESPHome](https://img.shields.io/badge/ESPHome-2026.9%2B-blue.svg)](https://esphome.io/)
 [![Hardware](https://img.shields.io/badge/Hardware-LilyGO%20T--CAN485-green.svg)](https://www.lilygo.cc/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
